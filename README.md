@@ -2,7 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/prongbang/excelx)](https://goreportcard.com/report/github.com/prongbang/excelx)
 
-Convert array struct to XLSX format with Golang
+Convert array struct to XLSX format and Parse XLSX format to array struct with Golang
 
 ## Install
 
@@ -38,6 +38,13 @@ file, err := excelx.Convert[MyStruct](m)
 
 ```go
 err := excelx.ResponseWriter(file, w, "output.xlsx")
+```
+
+## Using for Parse
+
+```go
+file, _, err := r.FormFile("xlsxfile")
+persons, err := excelx.Parse[Person](file)
 ```
 
 ### Example

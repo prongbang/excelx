@@ -71,8 +71,11 @@ func Parse[T any](file multipart.File, sheetName ...string) ([]T, error) {
 		return []T{}, err
 	}
 
+	// Skip the header row
+	rows.Next()
+
+	// Next the record row
 	for rows.Next() {
-		record := model[T]{}
 		cols, err := rows.Columns()
 		if err != nil {
 			return []T{}, err
@@ -81,7 +84,7 @@ func Parse[T any](file multipart.File, sheetName ...string) ([]T, error) {
 		for i, col := range cols {
 			fieldName := headerMap[i+1]
 			if fieldName != "" {
-				field := reflect.ValueOf(&record).Elem().FieldByName(fieldName)
+				field := reflect.ValueOf(&record.Data).Elem().FieldByName(fieldName)
 				if field.IsValid() {
 					// Convert the value based on the field kind
 					switch field.Kind() {
