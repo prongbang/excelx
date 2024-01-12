@@ -1,0 +1,89 @@
+# excelx
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/prongbang/excelx)](https://goreportcard.com/report/github.com/prongbang/excelx)
+
+Convert array struct to XLSX format with Golang
+
+## Install
+
+```shell
+go get github.com/prongbang/excelx
+```
+
+## Define struct for Convert
+
+Add `header` for mapping in XLSX header and `no` start with 1 for sort header
+
+```go
+type Person struct {
+	Name  string `header:"Name" no:"3"`
+	Age   int    `header:"Age" no:"1"`
+	City  string `header:"City" no:"2"`
+	Other string
+}
+```
+
+## Using for Convert
+
+```go
+m := []MyStruct{
+    {"John Doe", 25, "New York", "555"},
+    {"Jane Doe", 30, "San Francisco", "555"},
+    {"Bob Smith", 22, "Chicago", "555"},
+}
+file, err := excelx.Convert[MyStruct](m)
+```
+
+## Save the Excel file to the response writer
+
+```go
+err := excelx.ResponseWriter(file, w, "output.xlsx")
+```
+
+### Example
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/prongbang/excelx"
+)
+
+// Define a sample struct
+type Person struct {
+	Name  string `header:"Name" no:"3"`
+	Age   int    `header:"Age" no:"1"`
+	City  string `header:"City" no:"2"`
+	Other string
+}
+
+func generateExcelHandler(w http.ResponseWriter, r *http.Request) {
+	// Sample data
+	persons := []Person{
+		{"John Doe", 25, "New York", "555"},
+		{"Jane Doe", 30, "San Francisco", "555"},
+		{"Bob Smith", 22, "Chicago", "555"},
+	}
+
+	// Create a new Excel file
+	file, _ := excelx.Convert[Person](persons)
+
+	// Save the Excel file to the response writer
+	err := excelx.ResponseWriter(file, w, "output.xlsx")
+	if err != nil {
+		fmt.Println("Error writing Excel file to response:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func main() {
+	http.HandleFunc("/excelx", generateExcelHandler)
+
+	// Start the HTTP server
+	fmt.Println("Server listening on :8080...")
+	http.ListenAndServe(":8080", nil)
+}
+```
