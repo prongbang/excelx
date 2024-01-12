@@ -3,13 +3,19 @@ package excelx
 import (
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 )
+
+type model[T any] struct {
+	Data T
+}
 
 // NumberToColName converts a column number to an Excel column letter
 func NumberToColName(n int) string {
@@ -20,6 +26,102 @@ func NumberToColName(n int) string {
 		n /= 26
 	}
 	return result
+}
+
+// Convert string number to int
+func toInt(s string) int {
+	value, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+// Parse excel format to array struct
+func Parse[T any](file multipart.File, sheetName ...string) ([]T, error) {
+	// Set sheet name
+	sheet := "Sheet1"
+	if len(sheetName) > 0 {
+		sheet = sheetName[0]
+	}
+
+	// Open the XLSX file
+	xlsx, err := excelize.OpenReader(file)
+	if err != nil {
+		return []T{}, err
+	}
+
+	// Extract header information from the struct tags
+	headerMap := make(map[int]string)
+	record := model[T]{}
+	modelType := reflect.TypeOf(record.Data)
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		header := field.Tag.Get("header")
+		no := field.Tag.Get("no")
+		if header != "" && no != "" {
+			headerMap[toInt(no)] = header
+		}
+	}
+
+	// Iterate through the rows and populate the struct fields
+	var records []T
+	rows, err := xlsx.Rows(sheet)
+	if err != nil {
+		return []T{}, err
+	}
+
+	for rows.Next() {
+		record := model[T]{}
+		cols, err := rows.Columns()
+		if err != nil {
+			return []T{}, err
+		}
+
+		for i, col := range cols {
+			fieldName := headerMap[i+1]
+			if fieldName != "" {
+				field := reflect.ValueOf(&record).Elem().FieldByName(fieldName)
+				if field.IsValid() {
+					// Convert the value based on the field kind
+					switch field.Kind() {
+					case reflect.String:
+						field.SetString(col)
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						value, err := strconv.ParseInt(col, 10, 64)
+						if err == nil {
+							field.SetInt(value)
+						}
+					case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+						value, err := strconv.ParseUint(col, 10, 64)
+						if err == nil {
+							field.SetUint(value)
+						}
+					case reflect.Float32, reflect.Float64:
+						value, err := strconv.ParseFloat(col, 64)
+						if err == nil {
+							field.SetFloat(value)
+						}
+					case reflect.Bool:
+						value, err := strconv.ParseBool(col)
+						if err == nil {
+							field.SetBool(value)
+						}
+					case reflect.Struct:
+						// Assuming the time is represented in the format "2006-01-02 15:04:05"
+						value, err := time.Parse("2006-01-02 15:04:05", col)
+						if err == nil {
+							field.Set(reflect.ValueOf(value))
+						}
+					}
+				}
+			}
+		}
+
+		records = append(records, record.Data)
+	}
+
+	return records, nil
 }
 
 // Convert array struct to excel format
@@ -61,8 +163,8 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	}
 
 	// Add data to the sheet using reflection
-	for row, person := range data {
-		s := reflect.ValueOf(person)
+	for row, model := range data {
+		s := reflect.ValueOf(model)
 		for col, field := range fields {
 			cell := NumberToColName(col+1) + fmt.Sprintf("%d", row+2)
 			file.SetCellValue(sheet, cell, s.FieldByName(field.Name).Interface())
@@ -81,4 +183,8 @@ func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string)
 
 	// Save the Excel file to the response writer
 	return file.Write(w)
+}
+
+func RequestFile(r *http.Request, name string) (multipart.File, *multipart.FileHeader, error) {
+	return r.FormFile(name)
 }
