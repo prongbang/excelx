@@ -3,6 +3,8 @@ package excelx
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"reflect"
@@ -15,6 +17,11 @@ import (
 
 type model[T any] struct {
 	Data T
+}
+
+type Options struct {
+	Options   *excelize.Options
+	SheetName string
 }
 
 // NumberToColName converts a column number to an Excel column letter
@@ -37,16 +44,62 @@ func toInt(s string) int {
 	return value
 }
 
+func GetSheetList(r io.Reader, opts ...excelize.Options) []string {
+	// Open the XLSX file
+	xlsx, err := OpenReader(r, opts...)
+	if err != nil {
+		log.Println(err)
+		return []string{}
+	}
+
+	defer func() { _ = xlsx.Close() }()
+
+	return xlsx.GetSheetList()
+}
+
+func OpenReader(r io.Reader, opts ...excelize.Options) (*excelize.File, error) {
+	var options *excelize.Options
+	if len(opts) > 0 {
+		options = &opts[0]
+	}
+	var xlsx *excelize.File
+	var err error
+	if options != nil {
+		xlsx, err = excelize.OpenReader(r, *options)
+	} else {
+		xlsx, err = excelize.OpenReader(r)
+	}
+
+	return xlsx, err
+}
+
+func ParseByMultipart[T any](file multipart.File, sheetName ...string) ([]T, error) {
+	opts := &Options{}
+	if len(sheetName) > 0 {
+		opts.SheetName = sheetName[0]
+	}
+	return Parse[T](file, *opts)
+}
+
 // Parse excel format to array struct
-func Parse[T any](file multipart.File, sheetName ...string) ([]T, error) {
+func Parse[T any](r io.Reader, opts ...Options) ([]T, error) {
 	// Set sheet name
 	sheet := "Sheet1"
-	if len(sheetName) > 0 {
-		sheet = sheetName[0]
+	var options *excelize.Options
+	if len(opts) > 0 {
+		if opts[0].Options != nil {
+			options = opts[0].Options
+		}
+		if opts[0].SheetName != "" {
+			sheet = opts[0].SheetName
+		}
 	}
 
 	// Open the XLSX file
-	xlsx, err := excelize.OpenReader(file)
+	xlsx, err := OpenReader(r, *options)
+
+	defer func() { _ = xlsx.Close() }()
+
 	if err != nil {
 		return []T{}, err
 	}
