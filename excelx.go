@@ -96,7 +96,13 @@ func Parse[T any](r io.Reader, opts ...Options) ([]T, error) {
 	}
 
 	// Open the XLSX file
-	xlsx, err := OpenReader(r, *options)
+	var xlsx *excelize.File
+	var err error
+	if options != nil {
+		xlsx, err = OpenReader(r, *options)
+	} else {
+		xlsx, err = OpenReader(r)
+	}
 
 	defer func() { _ = xlsx.Close() }()
 
