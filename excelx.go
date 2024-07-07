@@ -8,8 +8,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xuri/excelize/v2"
@@ -78,11 +80,11 @@ func ParseByMultipart[T any](file multipart.File, sheetName ...string) ([]T, err
 	if len(sheetName) > 0 {
 		opts.SheetName = sheetName[0]
 	}
-	return Parse[T](file, *opts)
+	return Parser[T](file, *opts)
 }
 
-// Parse excel format to array struct
-func Parse[T any](r io.Reader, opts ...Options) ([]T, error) {
+// Parser excel format to array struct
+func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 	// Set sheet name
 	sheet := "Sheet1"
 	var options *excelize.Options
@@ -143,7 +145,13 @@ func Parse[T any](r io.Reader, opts ...Options) ([]T, error) {
 		for i, col := range cols {
 			fieldName := headerMap[i+1]
 			if fieldName != "" {
-				field := reflect.ValueOf(&record.Data).Elem().FieldByName(fieldName)
+				structValue := reflect.ValueOf(&record.Data).Elem()
+				field := structValue.FieldByNameFunc(func(name string) bool {
+					f, _ := reflect.TypeOf(record.Data).FieldByName(name)
+					fieldTag := f.Tag.Get("header")
+					head := RemoveDoubleQuote(fieldName)
+					return fieldTag == fmt.Sprintf("%v", head)
+				})
 				if field.IsValid() {
 					// Convert the value based on the field kind
 					switch field.Kind() {
@@ -186,6 +194,138 @@ func Parse[T any](r io.Reader, opts ...Options) ([]T, error) {
 	return records, nil
 }
 
+// ParserString excel format to array struct
+func ParserString[T any](r io.Reader, opts ...Options) ([]T, error) {
+	// Set sheet name
+	sheet := "Sheet1"
+	var options *excelize.Options
+	if len(opts) > 0 {
+		if opts[0].Options != nil {
+			options = opts[0].Options
+		}
+		if opts[0].SheetName != "" {
+			sheet = opts[0].SheetName
+		}
+	}
+
+	// Open the XLSX file
+	var xlsx *excelize.File
+	var err error
+	if options != nil {
+		xlsx, err = OpenReader(r, *options)
+	} else {
+		xlsx, err = OpenReader(r)
+	}
+
+	defer func() { _ = xlsx.Close() }()
+
+	if err != nil {
+		return []T{}, err
+	}
+
+	// Extract header information from the struct tags
+	headerMap := make(map[int]string)
+	record := model[T]{}
+	modelType := reflect.TypeOf(record.Data)
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		header := field.Tag.Get("header")
+		no := field.Tag.Get("no")
+		if header != "" && no != "" {
+			headerMap[toInt(no)] = header
+		}
+	}
+
+	// Iterate through the rows and populate the struct fields
+	var records []T
+	rows, err := xlsx.Rows(sheet)
+	if err != nil {
+		return []T{}, err
+	}
+
+	// Skip the header row
+	rows.Next()
+
+	// Next the record row
+	for rows.Next() {
+		cols, e := rows.Columns()
+		if e != nil {
+			return []T{}, e
+		}
+
+		for i, col := range cols {
+			fieldName := headerMap[i+1]
+			if fieldName != "" {
+				structValue := reflect.ValueOf(&record.Data).Elem()
+				field := structValue.FieldByNameFunc(func(name string) bool {
+					f, _ := reflect.TypeOf(record.Data).FieldByName(name)
+					fieldTag := f.Tag.Get("header")
+					head := RemoveDoubleQuote(fieldName)
+					return fieldTag == fmt.Sprintf("%v", head)
+				})
+				if field.IsValid() {
+					field.SetString(col)
+				}
+			}
+		}
+
+		records = append(records, record.Data)
+	}
+
+	return records, nil
+}
+
+// ParserFunc excel format to array struct
+func ParserFunc(r io.Reader, onRecord func([]string) error, opts ...Options) error {
+	// Set sheet name
+	sheet := "Sheet1"
+	var options *excelize.Options
+	if len(opts) > 0 {
+		if opts[0].Options != nil {
+			options = opts[0].Options
+		}
+		if opts[0].SheetName != "" {
+			sheet = opts[0].SheetName
+		}
+	}
+
+	// Open the XLSX file
+	var xlsx *excelize.File
+	var err error
+	if options != nil {
+		xlsx, err = OpenReader(r, *options)
+	} else {
+		xlsx, err = OpenReader(r)
+	}
+
+	defer func() { _ = xlsx.Close() }()
+
+	if err != nil {
+		return err
+	}
+
+	// Iterate through the rows and populate the struct fields
+	rows, err := xlsx.Rows(sheet)
+	if err != nil {
+		return err
+	}
+
+	// Next the record row
+	for rows.Next() {
+		cols, e := rows.Columns()
+		if e != nil {
+			return e
+		}
+
+		er := onRecord(cols)
+		if er != nil {
+			return er
+		}
+	}
+
+	return nil
+}
+
 // Convert array struct to excel format
 func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	if len(data) == 0 {
@@ -200,7 +340,7 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	if len(sheetName) > 0 {
 		sheet = sheetName[0]
 	}
-	file.NewSheet(sheet)
+	_, _ = file.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag
 	s := reflect.TypeOf(data[0])
@@ -221,7 +361,7 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	for col, field := range fields {
 		header := field.Tag.Get("header")
 		cell := NumberToColName(col+1) + "1"
-		file.SetCellValue(sheet, cell, header)
+		_ = file.SetCellValue(sheet, cell, header)
 	}
 
 	// Add data to the sheet using reflection
@@ -229,7 +369,7 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 		s := reflect.ValueOf(model)
 		for col, field := range fields {
 			cell := NumberToColName(col+1) + fmt.Sprintf("%d", row+2)
-			file.SetCellValue(sheet, cell, s.FieldByName(field.Name).Interface())
+			_ = file.SetCellValue(sheet, cell, s.FieldByName(field.Name).Interface())
 		}
 	}
 
@@ -249,4 +389,22 @@ func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string)
 
 func RequestFile(r *http.Request, name string) (multipart.File, *multipart.FileHeader, error) {
 	return r.FormFile(name)
+}
+
+// RemoveDoubleQuote remove double quote (") and clear unicode from text
+func RemoveDoubleQuote(text string) string {
+	text = ClearUnicode(text)
+	first := strings.Index(text, "\"")
+	last := strings.LastIndex(text, "\"")
+	if first == 0 && last == (len(text)-1) {
+		text = text[1:last]
+	}
+	return text
+}
+
+// ClearUnicode clear unicode from text
+func ClearUnicode(text string) string {
+	regex := regexp.MustCompile("^\ufeff")
+	result := regex.ReplaceAllString(text, "")
+	return strings.TrimSpace(result)
 }
