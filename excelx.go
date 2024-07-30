@@ -3,6 +3,7 @@ package excelx
 import (
 	"errors"
 	"fmt"
+	"github.com/xuri/excelize/v2"
 	"io"
 	"log"
 	"mime/multipart"
@@ -12,9 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/xuri/excelize/v2"
 )
 
 type model[T any] struct {
@@ -142,46 +140,88 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 			return []T{}, err
 		}
 
-		for i, col := range cols {
+		for i, field := range cols {
 			fieldName := headerMap[i+1]
 			if fieldName != "" {
 				structValue := reflect.ValueOf(&record.Data).Elem()
-				field := structValue.FieldByNameFunc(func(name string) bool {
+				structField := structValue.FieldByNameFunc(func(name string) bool {
 					f, _ := reflect.TypeOf(record.Data).FieldByName(name)
 					fieldTag := f.Tag.Get("header")
 					head := RemoveDoubleQuote(fieldName)
 					return fieldTag == fmt.Sprintf("%v", head)
 				})
-				if field.IsValid() {
+
+				if structField.IsValid() {
 					// Convert the value based on the field kind
-					switch field.Kind() {
-					case reflect.String:
-						field.SetString(col)
-					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-						value, err := strconv.ParseInt(col, 10, 64)
-						if err == nil {
-							field.SetInt(value)
+					switch structField.Kind() {
+					case reflect.Ptr:
+						// Handle pointer types
+						fieldType := structField.Type()
+						elemType := fieldType.Elem()
+						ptrValue := reflect.New(elemType)
+						switch elemType.Kind() {
+						case reflect.String:
+							ptrValue.Elem().SetString(field)
+						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+							value, err := strconv.ParseInt(field, 10, 64)
+							if err == nil {
+								ptrValue.Elem().SetInt(value)
+							} else {
+								structField.Set(reflect.Zero(fieldType))
+								continue
+							}
+						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+							value, err := strconv.ParseUint(field, 10, 64)
+							if err == nil {
+								ptrValue.Elem().SetUint(value)
+							} else {
+								structField.Set(reflect.Zero(fieldType))
+								continue
+							}
+						case reflect.Float32, reflect.Float64:
+							value, err := strconv.ParseFloat(field, 64)
+							if err == nil {
+								ptrValue.Elem().SetFloat(value)
+							} else {
+								structField.Set(reflect.Zero(fieldType))
+								continue
+							}
+						case reflect.Bool:
+							value, err := strconv.ParseBool(field)
+							if err == nil {
+								ptrValue.Elem().SetBool(value)
+							}
+						case reflect.Struct:
+							ptrValue.Elem().Set(reflect.ValueOf(field))
 						}
-					case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-						value, err := strconv.ParseUint(col, 10, 64)
-						if err == nil {
-							field.SetUint(value)
-						}
-					case reflect.Float32, reflect.Float64:
-						value, err := strconv.ParseFloat(col, 64)
-						if err == nil {
-							field.SetFloat(value)
-						}
-					case reflect.Bool:
-						value, err := strconv.ParseBool(col)
-						if err == nil {
-							field.SetBool(value)
-						}
-					case reflect.Struct:
-						// Assuming the time is represented in the format "2006-01-02 15:04:05"
-						value, err := time.Parse("2006-01-02 15:04:05", col)
-						if err == nil {
-							field.Set(reflect.ValueOf(value))
+						structField.Set(ptrValue)
+					default:
+						// Handle non-pointer types as before
+						switch structField.Kind() {
+						case reflect.String:
+							structField.SetString(field)
+						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+							value, err := strconv.ParseInt(field, 10, 64)
+							if err == nil {
+								structField.SetInt(value)
+							}
+						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+							value, err := strconv.ParseUint(field, 10, 64)
+							if err == nil {
+								structField.SetUint(value)
+							}
+						case reflect.Float32, reflect.Float64:
+							value, err := strconv.ParseFloat(field, 64)
+							if err == nil {
+								structField.SetFloat(value)
+							}
+						case reflect.Bool:
+							value, err := strconv.ParseBool(field)
+							if err == nil {
+								structField.SetBool(value)
+							}
+						case reflect.Struct:
+							structField.Set(reflect.ValueOf(field))
 						}
 					}
 				}
@@ -365,11 +405,11 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	}
 
 	// Add data to the sheet using reflection
-	for row, model := range data {
-		s := reflect.ValueOf(model)
+	for row, md := range data {
+		v := reflect.ValueOf(md)
 		for col, field := range fields {
 			cell := NumberToColName(col+1) + fmt.Sprintf("%d", row+2)
-			_ = file.SetCellValue(sheet, cell, s.FieldByName(field.Name).Interface())
+			_ = file.SetCellValue(sheet, cell, v.FieldByName(field.Name).Interface())
 		}
 	}
 
