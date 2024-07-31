@@ -81,6 +81,21 @@ func ParseByMultipart[T any](file multipart.File, sheetName ...string) ([]T, err
 	return Parser[T](file, *opts)
 }
 
+func IsEmpty(slice []string) bool {
+	// Check if the slice itself is empty
+	if len(slice) == 0 {
+		return true
+	}
+
+	// Iterate over the slice and return false as soon as a non-empty string is found
+	for _, s := range slice {
+		if s != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // Parser excel format to array struct
 func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 	// Set sheet name
@@ -130,8 +145,18 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 		return []T{}, err
 	}
 
-	// Skip the header row
-	rows.Next()
+	// Fetch the column names
+	_ = rows.Next()
+	columns, err := rows.Columns()
+	if err != nil {
+		return []T{}, err
+	}
+
+	// Set the column names as header by index
+	header := make([]string, len(columns))
+	for i, col := range columns {
+		header[i] = col
+	}
 
 	// Next the record row
 	for rows.Next() {
@@ -140,89 +165,91 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 			return []T{}, err
 		}
 
-		for i, field := range cols {
-			fieldName := headerMap[i+1]
-			if fieldName != "" {
-				structValue := reflect.ValueOf(&record.Data).Elem()
-				structField := structValue.FieldByNameFunc(func(name string) bool {
-					f, _ := reflect.TypeOf(record.Data).FieldByName(name)
-					fieldTag := f.Tag.Get("header")
-					head := RemoveDoubleQuote(fieldName)
-					return fieldTag == fmt.Sprintf("%v", head)
-				})
+		// Ignore row is empty
+		if IsEmpty(cols) {
+			continue
+		}
 
-				if structField.IsValid() {
-					// Convert the value based on the field kind
+		for i, field := range cols {
+			structValue := reflect.ValueOf(&record.Data).Elem()
+			structField := structValue.FieldByNameFunc(func(name string) bool {
+				f, _ := reflect.TypeOf(record.Data).FieldByName(name)
+				fieldTag := f.Tag.Get("header")
+				head := RemoveDoubleQuote(header[i])
+				return fieldTag == fmt.Sprintf("%v", head)
+			})
+
+			if structField.IsValid() {
+				// Convert the value based on the field kind
+				switch structField.Kind() {
+				case reflect.Ptr:
+					// Handle pointer types
+					fieldType := structField.Type()
+					elemType := fieldType.Elem()
+					ptrValue := reflect.New(elemType)
+					switch elemType.Kind() {
+					case reflect.String:
+						ptrValue.Elem().SetString(field)
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						value, err := strconv.ParseInt(field, 10, 64)
+						if err == nil {
+							ptrValue.Elem().SetInt(value)
+						} else {
+							structField.Set(reflect.Zero(fieldType))
+							continue
+						}
+					case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+						value, err := strconv.ParseUint(field, 10, 64)
+						if err == nil {
+							ptrValue.Elem().SetUint(value)
+						} else {
+							structField.Set(reflect.Zero(fieldType))
+							continue
+						}
+					case reflect.Float32, reflect.Float64:
+						value, err := strconv.ParseFloat(field, 64)
+						if err == nil {
+							ptrValue.Elem().SetFloat(value)
+						} else {
+							structField.Set(reflect.Zero(fieldType))
+							continue
+						}
+					case reflect.Bool:
+						value, err := strconv.ParseBool(field)
+						if err == nil {
+							ptrValue.Elem().SetBool(value)
+						}
+					case reflect.Struct:
+						ptrValue.Elem().Set(reflect.ValueOf(field))
+					}
+					structField.Set(ptrValue)
+				default:
+					// Handle non-pointer types as before
 					switch structField.Kind() {
-					case reflect.Ptr:
-						// Handle pointer types
-						fieldType := structField.Type()
-						elemType := fieldType.Elem()
-						ptrValue := reflect.New(elemType)
-						switch elemType.Kind() {
-						case reflect.String:
-							ptrValue.Elem().SetString(field)
-						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-							value, err := strconv.ParseInt(field, 10, 64)
-							if err == nil {
-								ptrValue.Elem().SetInt(value)
-							} else {
-								structField.Set(reflect.Zero(fieldType))
-								continue
-							}
-						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-							value, err := strconv.ParseUint(field, 10, 64)
-							if err == nil {
-								ptrValue.Elem().SetUint(value)
-							} else {
-								structField.Set(reflect.Zero(fieldType))
-								continue
-							}
-						case reflect.Float32, reflect.Float64:
-							value, err := strconv.ParseFloat(field, 64)
-							if err == nil {
-								ptrValue.Elem().SetFloat(value)
-							} else {
-								structField.Set(reflect.Zero(fieldType))
-								continue
-							}
-						case reflect.Bool:
-							value, err := strconv.ParseBool(field)
-							if err == nil {
-								ptrValue.Elem().SetBool(value)
-							}
-						case reflect.Struct:
-							ptrValue.Elem().Set(reflect.ValueOf(field))
+					case reflect.String:
+						structField.SetString(field)
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						value, err := strconv.ParseInt(field, 10, 64)
+						if err == nil {
+							structField.SetInt(value)
 						}
-						structField.Set(ptrValue)
-					default:
-						// Handle non-pointer types as before
-						switch structField.Kind() {
-						case reflect.String:
-							structField.SetString(field)
-						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-							value, err := strconv.ParseInt(field, 10, 64)
-							if err == nil {
-								structField.SetInt(value)
-							}
-						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-							value, err := strconv.ParseUint(field, 10, 64)
-							if err == nil {
-								structField.SetUint(value)
-							}
-						case reflect.Float32, reflect.Float64:
-							value, err := strconv.ParseFloat(field, 64)
-							if err == nil {
-								structField.SetFloat(value)
-							}
-						case reflect.Bool:
-							value, err := strconv.ParseBool(field)
-							if err == nil {
-								structField.SetBool(value)
-							}
-						case reflect.Struct:
-							structField.Set(reflect.ValueOf(field))
+					case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+						value, err := strconv.ParseUint(field, 10, 64)
+						if err == nil {
+							structField.SetUint(value)
 						}
+					case reflect.Float32, reflect.Float64:
+						value, err := strconv.ParseFloat(field, 64)
+						if err == nil {
+							structField.SetFloat(value)
+						}
+					case reflect.Bool:
+						value, err := strconv.ParseBool(field)
+						if err == nil {
+							structField.SetBool(value)
+						}
+					case reflect.Struct:
+						structField.Set(reflect.ValueOf(field))
 					}
 				}
 			}
