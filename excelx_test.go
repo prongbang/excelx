@@ -77,6 +77,29 @@ func TestConvertIsNotEmpty(t *testing.T) {
 	}
 }
 
+func TestConvertsIsNotEmpty(t *testing.T) {
+	// Given
+	persons := []Person{
+		{"John Doe", 25, "New York", "555"},
+		{"Jane Doe", 30, "San Francisco", "555"},
+		{"Bob Smith", 22, "Chicago", "555"},
+	}
+	sheets := []excelx.Sheet[Person]{
+		{Name: "Sheet1", Data: persons},
+		{Name: "Sheet2", Data: persons},
+	}
+
+	// When
+	file, err := excelx.Converts[Person](sheets)
+
+	// Then
+	if err != nil {
+		t.Error("Error", err)
+	} else {
+		_ = file.SaveAs("output.xlsx")
+	}
+}
+
 func TestConvertIsEmpty(t *testing.T) {
 	// Given
 	persons := []Person{}

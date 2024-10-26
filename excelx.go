@@ -19,6 +19,11 @@ type model[T any] struct {
 	Data T
 }
 
+type Sheet[T any] struct {
+	Name string
+	Data []T
+}
+
 type Options struct {
 	Options   *excelize.Options
 	SheetName string
@@ -407,6 +412,30 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	if len(sheetName) > 0 {
 		sheet = sheetName[0]
 	}
+
+	NewSheet(file, sheet, data)
+
+	return file, nil
+}
+
+// Converts array struct to excel format
+func Converts[T any](sheets []Sheet[T]) (*excelize.File, error) {
+	if len(sheets) == 0 {
+		return nil, errors.New("sheets is empty")
+	}
+
+	// Create a new Excel file
+	file := excelize.NewFile()
+
+	// Create a new sheet
+	for _, sheet := range sheets {
+		NewSheet(file, sheet.Name, sheet.Data)
+	}
+
+	return file, nil
+}
+
+func NewSheet[T any](file *excelize.File, sheet string, data []T) {
 	_, _ = file.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag
@@ -439,8 +468,6 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 			_ = file.SetCellValue(sheet, cell, v.FieldByName(field.Name).Interface())
 		}
 	}
-
-	return file, nil
 }
 
 func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string) error {
