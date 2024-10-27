@@ -486,7 +486,7 @@ func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string)
 	return file.Write(w)
 }
 
-func SendStream[T Response](file *excelize.File, c T, filename string) error {
+func SendStream[T Response](c T, file *excelize.File, filename string) error {
 	// Set headers for Excel file download
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))

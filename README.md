@@ -60,7 +60,7 @@ err := excelx.ResponseWriter(file, w, "output.xlsx")
 - fiber
 
 ```go
-err := excelx.SendStream(file, ctx, "output.xlsx")
+err := excelx.SendStream(ctx, file, "output.xlsx")
 ```
 
 ## Using for Parse
