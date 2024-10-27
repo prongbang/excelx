@@ -42,7 +42,7 @@ m := []MyStruct{
     {"Jane Doe", 30, "San Francisco", "555"},
     {"Bob Smith", 22, "Chicago", "555"},
 }
-sheets := []Sheet[MyStruct]{
+sheets := []excelx.Sheet[MyStruct]{
 	{Name: "Sheet1", Data: m},
 	{Name: "Sheet2", Data: m},
 }
@@ -51,8 +51,16 @@ file, err := excelx.Converts[MyStruct](sheets)
 
 ## Save the Excel file to the response writer
 
+- http
+
 ```go
 err := excelx.ResponseWriter(file, w, "output.xlsx")
+```
+
+- fiber
+
+```go
+err := excelx.SendStream(file, ctx, "output.xlsx")
 ```
 
 ## Using for Parse

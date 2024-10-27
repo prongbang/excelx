@@ -29,6 +29,11 @@ type Options struct {
 	SheetName string
 }
 
+type Response interface {
+	Set(key, val string)
+	SendStream(stream io.Reader, size ...int) error
+}
+
 // NumberToColName converts a column number to an Excel column letter
 func NumberToColName(n int) string {
 	result := ""
@@ -413,7 +418,7 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 		sheet = sheetName[0]
 	}
 
-	NewSheet(file, sheet, data)
+	newSheet(file, sheet, data)
 
 	return file, nil
 }
@@ -429,13 +434,13 @@ func Converts[T any](sheets []Sheet[T]) (*excelize.File, error) {
 
 	// Create a new sheet
 	for _, sheet := range sheets {
-		NewSheet(file, sheet.Name, sheet.Data)
+		newSheet(file, sheet.Name, sheet.Data)
 	}
 
 	return file, nil
 }
 
-func NewSheet[T any](file *excelize.File, sheet string, data []T) {
+func newSheet[T any](file *excelize.File, sheet string, data []T) {
 	_, _ = file.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag
@@ -479,6 +484,30 @@ func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string)
 
 	// Save the Excel file to the response writer
 	return file.Write(w)
+}
+
+func SendStream[T Response](file *excelize.File, c T, filename string) error {
+	// Set headers for Excel file download
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+
+	// Set up an io.Pipe for efficient memory usage
+	pr, pw := io.Pipe()
+
+	// Use a goroutine to write the file to the pipe
+	go func() {
+		// Ensure the pipe writer closes after writing
+		defer func(pw *io.PipeWriter) {
+			_ = pw.Close()
+		}(pw)
+
+		if err := file.Write(pw); err != nil {
+			_ = pw.CloseWithError(err)
+		}
+	}()
+
+	// Stream the file to the response body with optimal memory usage
+	return c.SendStream(pr)
 }
 
 func RequestFile(r *http.Request, name string) (multipart.File, *multipart.FileHeader, error) {
