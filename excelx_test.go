@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/xuri/excelize/v2"
 	"os"
 	"testing"
 
@@ -16,6 +17,10 @@ type Person struct {
 	Age   int    `header:"Age" no:"1"`
 	City  string `header:"City" no:"2"`
 	Other string `header:"other" no:""`
+}
+type Person2 struct {
+	Age   int    `header:"Age" no:"1"`
+	Other string `header:"other" no:"2"`
 }
 
 type Simple struct {
@@ -84,13 +89,17 @@ func TestConvertsIsNotEmpty(t *testing.T) {
 		{"Jane Doe", 30, "San Francisco", "555"},
 		{"Bob Smith", 22, "Chicago", "555"},
 	}
-	sheets := []excelx.Sheet[Person]{
-		{Name: "Sheet1", Data: persons},
-		{Name: "Sheet2", Data: persons},
+	persons2 := []Person2{
+		{25, "New York1"},
+		{26, "New York2"},
+		{27, "New York3"},
 	}
 
 	// When
-	file, err := excelx.Converts[Person](sheets)
+	file, err := excelx.Converts(func(file *excelize.File) {
+		excelx.NewSheet(file, "Sheet1", persons)
+		excelx.NewSheet(file, "Sheet2", persons2)
+	})
 
 	// Then
 	if err != nil {

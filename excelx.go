@@ -19,10 +19,23 @@ type model[T any] struct {
 	Data T
 }
 
+type SheetInterface interface {
+	GetName() string
+	GetData() []any
+}
+
 type Sheet[T any] struct {
 	Name string
 	Data []T
 }
+
+//func (s Sheet[T]) GetName() string {
+//	return s.Name
+//}
+//
+//func (s Sheet[T]) GetData() []any {
+//	return s.Data
+//}
 
 type Options struct {
 	Options   *excelize.Options
@@ -403,7 +416,7 @@ func ParserFunc(r io.Reader, onRecord func([]string) error, opts ...Options) err
 	return nil
 }
 
-// Convert array struct to excel format
+// Convert array struct to Excel format
 func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 	if len(data) == 0 {
 		return nil, errors.New("data is empty")
@@ -418,29 +431,30 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 		sheet = sheetName[0]
 	}
 
-	newSheet(file, sheet, data)
+	NewSheet(file, sheet, data)
 
 	return file, nil
 }
 
-// Converts array struct to excel format
-func Converts[T any](sheets []Sheet[T]) (*excelize.File, error) {
-	if len(sheets) == 0 {
-		return nil, errors.New("sheets is empty")
-	}
+func Conv() (*excelize.File, error) {
+	// Create a new Excel file
+	file := excelize.NewFile()
 
+	return file, nil
+}
+
+// Converts array struct to Excel format
+func Converts(onNewSheet func(file *excelize.File)) (*excelize.File, error) {
 	// Create a new Excel file
 	file := excelize.NewFile()
 
 	// Create a new sheet
-	for _, sheet := range sheets {
-		newSheet(file, sheet.Name, sheet.Data)
-	}
+	onNewSheet(file)
 
 	return file, nil
 }
 
-func newSheet[T any](file *excelize.File, sheet string, data []T) {
+func NewSheet[T any](file *excelize.File, sheet string, data []T) {
 	_, _ = file.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag

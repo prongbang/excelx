@@ -37,16 +37,20 @@ file, err := excelx.Convert[MyStruct](m)
 ## Using for Convert multiple sheets
 
 ```go
-m := []MyStruct{
+m1 := []MyStruct1{
     {"John Doe", 25, "New York", "555"},
     {"Jane Doe", 30, "San Francisco", "555"},
     {"Bob Smith", 22, "Chicago", "555"},
 }
-sheets := []excelx.Sheet[MyStruct]{
-	{Name: "Sheet1", Data: m},
-	{Name: "Sheet2", Data: m},
+m2 := []MyStruct2{
+    {"John Doe", 25, "New York", "555"},
+    {"Jane Doe", 30, "San Francisco", "555"},
+    {"Bob Smith", 22, "Chicago", "555"},
 }
-file, err := excelx.Converts[MyStruct](sheets)
+file, err := excelx.Converts(func(file *excelize.File) {
+    excelx.NewSheet(file, "Sheet1", m1)
+    excelx.NewSheet(file, "Sheet2", m2)
+})
 ```
 
 ## Save the Excel file to the response writer
