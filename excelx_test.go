@@ -15,7 +15,7 @@ type Person struct {
 	Name  string `header:"Name" no:"3"`
 	Age   int    `header:"Age" no:"1"`
 	City  string `header:"City" no:"2"`
-	Other string
+	Other string `header:"other" no:""`
 }
 
 type Simple struct {

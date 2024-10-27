@@ -448,7 +448,7 @@ func newSheet[T any](file *excelize.File, sheet string, data []T) {
 	fields := []reflect.StructField{}
 	for i := 0; i < s.NumField(); i++ {
 		cell := s.Field(i).Tag.Get("header")
-		if _, err := strconv.Atoi(s.Field(i).Tag.Get("no")); err == nil || cell != "" {
+		if _, err := strconv.Atoi(s.Field(i).Tag.Get("no")); err == nil && cell != "" {
 			fields = append(fields, s.Field(i))
 		}
 	}
