@@ -42,14 +42,22 @@ m1 := []MyStruct1{
     {"Jane Doe", 30, "San Francisco", "555"},
     {"Bob Smith", 22, "Chicago", "555"},
 }
-m2 := []MyStruct2{
+m2 := []MyStruct1{
     {"John Doe", 25, "New York", "555"},
     {"Jane Doe", 30, "San Francisco", "555"},
     {"Bob Smith", 22, "Chicago", "555"},
 }
-file, err := excelx.Converts(func(file *excelize.File) {
-    excelx.NewSheet(file, "Sheet1", m1)
-    excelx.NewSheet(file, "Sheet2", m2)
+file, err := excelx.Converts(func(file excelx.Xlsx) []excelx.Sheet {
+    return []excelx.Sheet{
+        {
+            Name: "Struct1",
+            Exec: func(name string) { excelx.NewSheet(file, name, m1) },
+        },
+        {
+            Name: "Struct1",
+            Exec: func(name string) { excelx.NewSheet(file, name, m2) },
+        },
+    }
 })
 ```
 

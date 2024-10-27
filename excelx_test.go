@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/xuri/excelize/v2"
 	"os"
 	"testing"
 
@@ -68,7 +67,7 @@ func TestNumberToColName(t *testing.T) {
 func TestConvertIsNotEmpty(t *testing.T) {
 	// Given
 	persons := []Person{
-		{"John Doe", 25, "New York", "555"},
+		{"John Doe", 25, "Exec York", "555"},
 		{"Jane Doe", 30, "San Francisco", "555"},
 		{"Bob Smith", 22, "Chicago", "555"},
 	}
@@ -84,28 +83,44 @@ func TestConvertIsNotEmpty(t *testing.T) {
 
 func TestConvertsIsNotEmpty(t *testing.T) {
 	// Given
-	persons := []Person{
-		{"John Doe", 25, "New York", "555"},
+	persons1 := []Person{
+		{"John Doe", 25, "Exec York", "555"},
 		{"Jane Doe", 30, "San Francisco", "555"},
 		{"Bob Smith", 22, "Chicago", "555"},
 	}
 	persons2 := []Person2{
-		{25, "New York1"},
-		{26, "New York2"},
-		{27, "New York3"},
+		{25, "Exec York1"},
+		{26, "Exec York2"},
+		{27, "Exec York3"},
+	}
+	persons3 := []Person2{
+		{25, "Exec York1"},
+		{26, "Exec York2"},
 	}
 
 	// When
-	file, err := excelx.Converts(func(file *excelize.File) {
-		excelx.NewSheet(file, "Sheet1", persons)
-		excelx.NewSheet(file, "Sheet2", persons2)
+	file, err := excelx.Converts(func(file excelx.Xlsx) []excelx.Sheet {
+		return []excelx.Sheet{
+			{
+				Name: "Person1",
+				Exec: func(name string) { excelx.NewSheet(file, name, persons1) },
+			},
+			{
+				Name: "Person2",
+				Exec: func(name string) { excelx.NewSheet(file, name, persons2) },
+			},
+			{
+				Name: "Person3",
+				Exec: func(name string) { excelx.NewSheet(file, name, persons3) },
+			},
+		}
 	})
 
 	// Then
 	if err != nil {
 		t.Error("Error", err)
 	} else {
-		_ = file.SaveAs("output.xlsx")
+		_ = file.File.SaveAs("output.xlsx")
 	}
 }
 

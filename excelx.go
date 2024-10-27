@@ -24,18 +24,14 @@ type SheetInterface interface {
 	GetData() []any
 }
 
-type Sheet[T any] struct {
+type Sheet struct {
 	Name string
-	Data []T
+	Exec func(name string)
 }
 
-//func (s Sheet[T]) GetName() string {
-//	return s.Name
-//}
-//
-//func (s Sheet[T]) GetData() []any {
-//	return s.Data
-//}
+type Xlsx struct {
+	File *excelize.File
+}
 
 type Options struct {
 	Options   *excelize.Options
@@ -75,12 +71,12 @@ func GetSheetList(r io.Reader, opts ...excelize.Options) []string {
 		return []string{}
 	}
 
-	defer func() { _ = xlsx.Close() }()
+	defer func() { _ = xlsx.File.Close() }()
 
-	return xlsx.GetSheetList()
+	return xlsx.File.GetSheetList()
 }
 
-func OpenReader(r io.Reader, opts ...excelize.Options) (*excelize.File, error) {
+func OpenReader(r io.Reader, opts ...excelize.Options) (Xlsx, error) {
 	var options *excelize.Options
 	if len(opts) > 0 {
 		options = &opts[0]
@@ -93,7 +89,7 @@ func OpenReader(r io.Reader, opts ...excelize.Options) (*excelize.File, error) {
 		xlsx, err = excelize.OpenReader(r)
 	}
 
-	return xlsx, err
+	return Xlsx{xlsx}, err
 }
 
 func ParseByMultipart[T any](file multipart.File, sheetName ...string) ([]T, error) {
@@ -134,7 +130,7 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 	}
 
 	// Open the XLSX file
-	var xlsx *excelize.File
+	var xlsx Xlsx
 	var err error
 	if options != nil {
 		xlsx, err = OpenReader(r, *options)
@@ -142,7 +138,7 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 		xlsx, err = OpenReader(r)
 	}
 
-	defer func() { _ = xlsx.Close() }()
+	defer func() { _ = xlsx.File.Close() }()
 
 	if err != nil {
 		return []T{}, err
@@ -163,7 +159,7 @@ func Parser[T any](r io.Reader, opts ...Options) ([]T, error) {
 
 	// Iterate through the rows and populate the struct fields
 	var records []T
-	rows, err := xlsx.Rows(sheet)
+	rows, err := xlsx.File.Rows(sheet)
 	if err != nil {
 		return []T{}, err
 	}
@@ -299,7 +295,7 @@ func ParserString[T any](r io.Reader, opts ...Options) ([]T, error) {
 	}
 
 	// Open the XLSX file
-	var xlsx *excelize.File
+	var xlsx Xlsx
 	var err error
 	if options != nil {
 		xlsx, err = OpenReader(r, *options)
@@ -307,7 +303,7 @@ func ParserString[T any](r io.Reader, opts ...Options) ([]T, error) {
 		xlsx, err = OpenReader(r)
 	}
 
-	defer func() { _ = xlsx.Close() }()
+	defer func() { _ = xlsx.File.Close() }()
 
 	if err != nil {
 		return []T{}, err
@@ -328,7 +324,7 @@ func ParserString[T any](r io.Reader, opts ...Options) ([]T, error) {
 
 	// Iterate through the rows and populate the struct fields
 	var records []T
-	rows, err := xlsx.Rows(sheet)
+	rows, err := xlsx.File.Rows(sheet)
 	if err != nil {
 		return []T{}, err
 	}
@@ -380,7 +376,7 @@ func ParserFunc(r io.Reader, onRecord func([]string) error, opts ...Options) err
 	}
 
 	// Open the XLSX file
-	var xlsx *excelize.File
+	var xlsx Xlsx
 	var err error
 	if options != nil {
 		xlsx, err = OpenReader(r, *options)
@@ -388,14 +384,14 @@ func ParserFunc(r io.Reader, onRecord func([]string) error, opts ...Options) err
 		xlsx, err = OpenReader(r)
 	}
 
-	defer func() { _ = xlsx.Close() }()
+	defer func() { _ = xlsx.File.Close() }()
 
 	if err != nil {
 		return err
 	}
 
 	// Iterate through the rows and populate the struct fields
-	rows, err := xlsx.Rows(sheet)
+	rows, err := xlsx.File.Rows(sheet)
 	if err != nil {
 		return err
 	}
@@ -417,13 +413,13 @@ func ParserFunc(r io.Reader, onRecord func([]string) error, opts ...Options) err
 }
 
 // Convert array struct to Excel format
-func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
+func Convert[T any](data []T, sheetName ...string) (*Xlsx, error) {
 	if len(data) == 0 {
 		return nil, errors.New("data is empty")
 	}
 
 	// Create a new Excel file
-	file := excelize.NewFile()
+	file := Xlsx{excelize.NewFile()}
 
 	// Create a new sheet
 	sheet := "Sheet1"
@@ -433,29 +429,29 @@ func Convert[T any](data []T, sheetName ...string) (*excelize.File, error) {
 
 	NewSheet(file, sheet, data)
 
-	return file, nil
-}
-
-func Conv() (*excelize.File, error) {
-	// Create a new Excel file
-	file := excelize.NewFile()
-
-	return file, nil
+	return &file, nil
 }
 
 // Converts array struct to Excel format
-func Converts(onNewSheet func(file *excelize.File)) (*excelize.File, error) {
+func Converts(sheets func(file Xlsx) []Sheet) (Xlsx, error) {
 	// Create a new Excel file
-	file := excelize.NewFile()
+	file := Xlsx{excelize.NewFile()}
 
 	// Create a new sheet
-	onNewSheet(file)
+	for i, sheet := range sheets(file) {
+		if i == 0 {
+			_ = file.File.SetSheetName("Sheet1", sheet.Name)
+			sheet.Exec(sheet.Name)
+		} else {
+			sheet.Exec(sheet.Name)
+		}
+	}
 
 	return file, nil
 }
 
-func NewSheet[T any](file *excelize.File, sheet string, data []T) {
-	_, _ = file.NewSheet(sheet)
+func NewSheet[T any](file Xlsx, sheet string, data []T) {
+	_, _ = file.File.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag
 	s := reflect.TypeOf(data[0])
@@ -476,7 +472,7 @@ func NewSheet[T any](file *excelize.File, sheet string, data []T) {
 	for col, field := range fields {
 		header := field.Tag.Get("header")
 		cell := NumberToColName(col+1) + "1"
-		_ = file.SetCellValue(sheet, cell, header)
+		_ = file.File.SetCellValue(sheet, cell, header)
 	}
 
 	// Add data to the sheet using reflection
@@ -484,12 +480,12 @@ func NewSheet[T any](file *excelize.File, sheet string, data []T) {
 		v := reflect.ValueOf(md)
 		for col, field := range fields {
 			cell := NumberToColName(col+1) + fmt.Sprintf("%d", row+2)
-			_ = file.SetCellValue(sheet, cell, v.FieldByName(field.Name).Interface())
+			_ = file.File.SetCellValue(sheet, cell, v.FieldByName(field.Name).Interface())
 		}
 	}
 }
 
-func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string) error {
+func ResponseWriter(file Xlsx, w http.ResponseWriter, filename string) error {
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -497,10 +493,10 @@ func ResponseWriter(file *excelize.File, w http.ResponseWriter, filename string)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
 	// Save the Excel file to the response writer
-	return file.Write(w)
+	return file.File.Write(w)
 }
 
-func SendStream[T Response](c T, file *excelize.File, filename string) error {
+func SendStream[T Response](c T, file Xlsx, filename string) error {
 	// Set headers for Excel file download
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
@@ -515,8 +511,10 @@ func SendStream[T Response](c T, file *excelize.File, filename string) error {
 			_ = pw.Close()
 		}(pw)
 
-		if err := file.Write(pw); err != nil {
-			_ = pw.CloseWithError(err)
+		if file.File != nil {
+			if err := file.File.Write(pw); err != nil {
+				_ = pw.CloseWithError(err)
+			}
 		}
 	}()
 
