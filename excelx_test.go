@@ -93,10 +93,7 @@ func TestConvertsIsNotEmpty(t *testing.T) {
 		{26, "Exec York2"},
 		{27, "Exec York3"},
 	}
-	persons3 := []Person2{
-		{25, "Exec York1"},
-		{26, "Exec York2"},
-	}
+	persons3 := []Person2{}
 
 	// When
 	file, err := excelx.Converts(func(file excelx.Xlsx) []excelx.Sheet {

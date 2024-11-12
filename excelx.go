@@ -451,15 +451,32 @@ func Converts(sheets func(file Xlsx) []Sheet) (Xlsx, error) {
 }
 
 func NewSheet[T any](file Xlsx, sheet string, data []T) {
+	var tType reflect.Type
+	if len(data) > 0 {
+		tType = reflect.TypeOf(data[0])
+	} else {
+		var zero T
+		tType = reflect.TypeOf(zero)
+	}
+
+	// Dereference if T is a pointer type
+	if tType.Kind() == reflect.Ptr {
+		tType = tType.Elem()
+	}
+
+	if tType.Kind() != reflect.Struct {
+		fmt.Println("T must be a struct or a pointer to struct")
+		return
+	}
+
 	_, _ = file.File.NewSheet(sheet)
 
 	// Use reflection to get struct field names and sort them by the "no" tag
-	s := reflect.TypeOf(data[0])
 	fields := []reflect.StructField{}
-	for i := 0; i < s.NumField(); i++ {
-		cell := s.Field(i).Tag.Get("header")
-		if _, err := strconv.Atoi(s.Field(i).Tag.Get("no")); err == nil && cell != "" {
-			fields = append(fields, s.Field(i))
+	for i := 0; i < tType.NumField(); i++ {
+		cell := tType.Field(i).Tag.Get("header")
+		if _, err := strconv.Atoi(tType.Field(i).Tag.Get("no")); err == nil && cell != "" {
+			fields = append(fields, tType.Field(i))
 		}
 	}
 	sort.Slice(fields, func(i, j int) bool {
